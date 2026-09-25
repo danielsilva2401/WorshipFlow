@@ -217,3 +217,11 @@ ps = re.sub(r'"version"s*:s*"[^"]+"', '"version": "1.0.56"', ps, count=1)
 pkg.write_text(ps)
 
 print("Melhorias v56 de notificações e UX mobile aplicadas.")
+
+
+# v57: aplica a camada de Admin, Permissões e Indisponibilidade após a v56.
+import subprocess
+subprocess.run(
+    [sys.executable, str(Path(__file__).with_name("apply_v57.py")), str(root)],
+    check=True,
+)
