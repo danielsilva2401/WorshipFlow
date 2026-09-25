@@ -276,16 +276,23 @@ jobs:
           ./gradlew assembleRelease
 
       - name: Assinar e validar APK
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          keytool -genkeypair -v             -keystore worshipflow-v521.jks             -storepass wf521store             -keypass wf521store             -alias worshipflow             -keyalg RSA             -keysize 2048             -validity 10000             -dname "CN=WorshipFlow, OU=Android, O=WorshipFlow, L=Porto Alegre, ST=RS, C=BR"
+          if [ -z "$ANDROID_KEYSTORE_B64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then
+            echo "Secrets de assinatura Android não configurados."
+            exit 1
+          fi
+
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
           $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v52.1-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-v521.jks             --ks-key-alias worshipflow             --ks-pass pass:wf521store             --key-pass pass:wf521store             --out WorshipFlow-v52.1-Google-Nativo.apk             WorshipFlow-v52.1-aligned.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v52.1-Google-Nativo.apk             WorshipFlow-v52.1-aligned.apk
 
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v52.1-Google-Nativo.apk
-
-          keytool -list -v -keystore worshipflow-v521.jks -storepass wf521store -alias worshipflow | grep "SHA1:" > WorshipFlow-v52.1-SHA1.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
