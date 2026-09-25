@@ -269,20 +269,26 @@ jobs:
           p.write_text(s)
           PY
 
-      - name: Compilar APK release sem assinatura
+      - name: Compilar APK release
         working-directory: app/android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Copiar APK
+      - name: Assinar e validar APK
         run: |
-          cp app/android/app/build/outputs/apk/release/app-release-unsigned.apk WorshipFlow-v52.1-unsigned.apk
+          base64 -d android-test-keystore.b64 > worshipflow-test.jks
+
+          $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v52.1-aligned.apk
+
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-test.jks             --ks-key-alias worshipflow             --ks-pass pass:worshipflow             --key-pass pass:worshipflow             --out WorshipFlow-v52.1-Google-Nativo.apk             WorshipFlow-v52.1-aligned.apk
+
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v52.1-Google-Nativo.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v52.1-unsigned
-          path: WorshipFlow-v52.1-unsigned.apk
+          name: WorshipFlow-v52.1-Google-Nativo
+          path: WorshipFlow-v52.1-Google-Nativo.apk
           if-no-files-found: error
           retention-days: 30
