@@ -66,14 +66,14 @@ jobs:
 
       - name: Configurar Firebase Web
         run: |
-          cat > "$APP_DIR/.env.production" <<'EOF'
-          VITE_FIREBASE_API_KEY=AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4
-          VITE_FIREBASE_AUTH_DOMAIN=worshipflow-f99f6.firebaseapp.com
-          VITE_FIREBASE_PROJECT_ID=worshipflow-f99f6
-          VITE_FIREBASE_APP_ID=1:678699277566:web:c9115862cfac49485319af
-          EOF
+          echo "VITE_FIREBASE_API_KEY=AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4" > "$APP_DIR/.env.production"
+          echo "VITE_FIREBASE_AUTH_DOMAIN=worshipflow-f99f6.firebaseapp.com" >> "$APP_DIR/.env.production"
+          echo "VITE_FIREBASE_PROJECT_ID=worshipflow-f99f6" >> "$APP_DIR/.env.production"
+          echo "VITE_FIREBASE_APP_ID=1:678699277566:web:c9115862cfac49485319af" >> "$APP_DIR/.env.production"
           echo "Firebase Web configurado para a build."
-          grep -q '^VITE_FIREBASE_PROJECT_ID=worshipflow-f99f6      - name: Instalar dependências e testar cifra
+          grep -q "^VITE_FIREBASE_PROJECT_ID=worshipflow-f99f6$" "$APP_DIR/.env.production"
+
+      - name: Instalar dependências e testar cifra
         working-directory: ${{ env.APP_DIR }}
         run: |
           npm install --no-audit --no-fund
@@ -88,7 +88,6 @@ jobs:
           else
             echo "Diretório tests não existe neste fonte; seguindo para o build web."
           fi
-
       - name: Build web v54.1
         working-directory: ${{ env.APP_DIR }}
         run: npm run build
