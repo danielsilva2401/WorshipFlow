@@ -47,3 +47,22 @@ data.setdefault("scripts", {})["postinstall"] = "node scripts/v57-postinstall.mj
 data["version"] = "1.0.57"
 pkg.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 print("WorshipFlow v57: versionamento Android preparado.")
+
+after_sync = root / "scripts" / "v57-after-sync.mjs"
+after_sync.write_text(r'''import { readFile, writeFile } from "node:fs/promises";
+
+const path = "android/app/build.gradle";
+let text = await readFile(path, "utf8");
+text = text
+  .replace(/versionCode\s+[^\n]+/, "versionCode 570")
+  .replace(/versionName\s+[^\n]+/, 'versionName "1.0.57"');
+await writeFile(path, text);
+console.log("WorshipFlow v57: Android definido como versionCode 570 / versionName 1.0.57");
+''')
+
+data = json.loads(pkg.read_text())
+data.setdefault("scripts", {})["capacitor:update:after"] = "node scripts/v57-after-sync.mjs"
+data.setdefault("scripts", {})["capacitor:sync:after"] = "node scripts/v57-after-sync.mjs"
+data["version"] = "1.0.57"
+pkg.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+print("WorshipFlow v57: hooks pós-sync configurados.")
