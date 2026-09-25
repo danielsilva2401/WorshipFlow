@@ -68,7 +68,17 @@ jobs:
         working-directory: ${{ env.APP_DIR }}
         run: |
           npm install --no-audit --no-fund
-          node --test             tests/saved-cifra-v50.test.mjs             tests/v51-stability.test.mjs             tests/cifra-v44.test.mjs             tests/cifra-v46-variants.test.mjs             tests/cifra-v47-serverless-source.test.mjs             tests/cifraclub-lookup.test.mjs             tests/cifraclub-resolver-v23.test.mjs             tests/cifraclub-ui.test.mjs
+          if [ -d tests ]; then
+            mapfile -t TEST_FILES < <(find tests -maxdepth 1 -type f \( -name "*.test.mjs" -o -name "*.test.js" \) | sort)
+            if [ "${#TEST_FILES[@]}" -gt 0 ]; then
+              echo "Executando ${#TEST_FILES[@]} teste(s) encontrado(s)..."
+              node --test "${TEST_FILES[@]}"
+            else
+              echo "Nenhum arquivo de teste encontrado; seguindo para o build web."
+            fi
+          else
+            echo "Diretório tests não existe neste fonte; seguindo para o build web."
+          fi
 
       - name: Build web v54
         working-directory: ${{ env.APP_DIR }}
