@@ -85,8 +85,7 @@ jobs:
 
           p = Path(os.environ["APP_DIR"]) / "src" / "App.jsx"
           text = p.read_text()
-          old = """import.meta.env.VITE_YOUTUBE_API_KEY ||
-        import.meta.env.VITE_FIREBASE_API_KEY"""
+          old = "import.meta.env.VITE_YOUTUBE_API_KEY ||\\n        import.meta.env.VITE_FIREBASE_API_KEY"
           if old in text:
               text = text.replace(old, "import.meta.env.VITE_YOUTUBE_API_KEY", 1)
           p.write_text(text)
@@ -96,6 +95,7 @@ jobs:
 
           test -s "$APP_DIR/.env.production"
           grep -q "^VITE_YOUTUBE_API_KEY=" "$APP_DIR/.env.production"
+
       - name: Instalar dependências e testar cifra
         working-directory: ${{ env.APP_DIR }}
         run: |
