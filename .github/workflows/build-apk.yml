@@ -278,30 +278,15 @@ jobs:
           </resources>
           """)
 
-          (res/"drawable"/"ic_worshipflow_foreground.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp" android:height="108dp"
-              android:viewportWidth="108" android:viewportHeight="108">
-            <path android:fillColor="#7C3AED" android:pathData="M0,0h108v108h-108z"/>
-            <path android:fillColor="#FFFFFF"
-              android:pathData="M22,31 L32,31 L40,67 L49,42 L59,42 L68,67 L76,31 L86,31 L75,79 L64,79 L54,54 L44,79 L33,79 Z"/>
-          </vector>
-          """)
-
-          (res/"mipmap-anydpi-v26"/"ic_launcher.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-            <background android:drawable="@color/wf_bg"/>
-            <foreground android:drawable="@drawable/ic_worshipflow_foreground"/>
-          </adaptive-icon>
-          """)
-          (res/"mipmap-anydpi-v26"/"ic_launcher_round.xml").write_text((res/"mipmap-anydpi-v26"/"ic_launcher.xml").read_text())
+          # Usa exatamente o mesmo PNG de 512x512 publicado pela PWA.
+          (res/"drawable-nodpi").mkdir(parents=True, exist_ok=True)
 
           (res/"drawable"/"wf_splash.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
           <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
             <item android:drawable="@color/wf_bg"/>
             <item android:gravity="center">
               <inset android:inset="72dp">
-                <bitmap android:gravity="center" android:src="@mipmap/ic_launcher"/>
+                <bitmap android:gravity="center" android:src="@drawable/wf_pwa_icon"/>
               </inset>
             </item>
           </layer-list>
@@ -331,7 +316,7 @@ jobs:
           <resources>
             <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
               <item name="android:windowSplashScreenBackground">@color/wf_bg</item>
-              <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+              <item name="android:windowSplashScreenAnimatedIcon">@drawable/wf_pwa_icon</item>
               <item name="android:windowSplashScreenIconBackgroundColor">@color/wf_bg</item>
             </style>
           </resources>
@@ -382,14 +367,27 @@ jobs:
           java.write_text(text)
           PY
 
-      - name: Definir versão v53
+          curl -fsSL "https://worshipflow-f99f6.web.app/icons/icon-512.png?v=21" \
+            -o app/android/app/src/main/res/drawable-nodpi/wf_pwa_icon.png
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          import re
+          s = re.sub(r'android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/wf_pwa_icon"', s)
+          s = re.sub(r'android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/wf_pwa_icon"', s)
+          p.write_text(s)
+          PY
+
+      - name: Definir versão v53.1
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path("app/android/app/build.gradle")
           s=p.read_text()
-          s=s.replace("versionCode 1", "versionCode 530")
-          s=s.replace('versionName "1.0"', 'versionName "1.0.53"')
+          s=s.replace("versionCode 1", "versionCode 531")
+          s=s.replace('versionName "1.0"', 'versionName "1.0.53.1"')
           p.write_text(s)
           PY
 
@@ -412,16 +410,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v53-aligned.apk
+          $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v53.1-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v53.apk             WorshipFlow-v53-aligned.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v53.1.apk             WorshipFlow-v53.1-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v53.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v53.1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v53
-          path: WorshipFlow-v53.apk
+          name: WorshipFlow-v53.1
+          path: WorshipFlow-v53.1.apk
           if-no-files-found: error
           retention-days: 30
