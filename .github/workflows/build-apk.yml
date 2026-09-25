@@ -64,13 +64,38 @@ jobs:
       - name: Aplicar melhorias v54 em Cifras
         run: python3 scripts/apply_v54.py "$APP_DIR"
 
-      - name: Configurar Firebase Web
+      - name: Configurar Firebase Web e YouTube
+        env:
+          VITE_YOUTUBE_API_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY }}
         run: |
+          if [ -z "$VITE_YOUTUBE_API_KEY" ]; then
+            echo "Secret VITE_YOUTUBE_API_KEY não configurado."
+            exit 1
+          fi
+
           echo "VITE_FIREBASE_API_KEY=AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4" > "$APP_DIR/.env.production"
           echo "VITE_FIREBASE_AUTH_DOMAIN=worshipflow-f99f6.firebaseapp.com" >> "$APP_DIR/.env.production"
           echo "VITE_FIREBASE_PROJECT_ID=worshipflow-f99f6" >> "$APP_DIR/.env.production"
           echo "VITE_FIREBASE_APP_ID=1:678699277566:web:c9115862cfac49485319af" >> "$APP_DIR/.env.production"
+          printf 'VITE_YOUTUBE_API_KEY=%s\n' "$VITE_YOUTUBE_API_KEY" >> "$APP_DIR/.env.production"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          p = Path(os.environ["APP_DIR"]) / "src" / "App.jsx"
+          text = p.read_text()
+          old = """import.meta.env.VITE_YOUTUBE_API_KEY ||
+        import.meta.env.VITE_FIREBASE_API_KEY"""
+          if old in text:
+              text = text.replace(old, "import.meta.env.VITE_YOUTUBE_API_KEY", 1)
+          p.write_text(text)
+          if "import.meta.env.VITE_YOUTUBE_API_KEY" not in text:
+              raise SystemExit("Referência da chave do YouTube não encontrada no App.jsx")
+          PY
+
           test -s "$APP_DIR/.env.production"
+          grep -q "^VITE_YOUTUBE_API_KEY=" "$APP_DIR/.env.production"
       - name: Instalar dependências e testar cifra
         working-directory: ${{ env.APP_DIR }}
         run: |
@@ -87,7 +112,7 @@ jobs:
             echo "Diretório tests não existe neste fonte; seguindo para o build web."
           fi
 
-      - name: Build web v54.2
+      - name: Build web v54.3
         working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
@@ -164,8 +189,8 @@ jobs:
           s=app.read_text()
           if "com.google.gms.google-services" not in s:
               s=s.rstrip()+"\n\napply plugin: 'com.google.gms.google-services'\n"
-          s=re.sub(r'versionCode\s+\d+','versionCode 542',s)
-          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.54.2"',s)
+          s=re.sub(r'versionCode\s+\d+','versionCode 543',s)
+          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.54.3"',s)
           app.write_text(s)
 
           vars=root/"android"/"variables.gradle"
@@ -179,7 +204,7 @@ jobs:
           npx cap update android
           npx cap sync android
 
-      - name: Restaurar login Google nativo v54.2
+      - name: Restaurar login Google nativo v54.3
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -327,16 +352,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v54.2-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v54.3-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v54.2.apk             WorshipFlow-v54.2-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v54.3.apk             WorshipFlow-v54.3-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v54.2.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v54.3.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v54.2
-          path: WorshipFlow-v54.2.apk
+          name: WorshipFlow-v54.3
+          path: WorshipFlow-v54.3.apk
           if-no-files-found: error
           retention-days: 30
