@@ -7,6 +7,32 @@ root = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ["APP_DIR"])
 app = root / "src" / "App.jsx"
 s = app.read_text()
 
+# O pacote reconstruído pode já conter as melhorias da v54.
+# Nesse caso, não aplica o mesmo patch pela segunda vez.
+already_v54 = (
+    '[lookupError, setLookupError] = useState("")' in s
+    and '[lookupAttempt, setLookupAttempt] = useState(0)' in s
+    and 'Tempo limite da busca atingido.' in s
+    and 'Tentando uma rota alternativa de acordes.' in s
+)
+if already_v54:
+    cifra = root / "src" / "cifraclub.js"
+    c = cifra.read_text()
+    if "v54: consulta as fontes principais em paralelo" not in c and "v54: fontes principais em paralelo" not in c:
+        raise SystemExit("App.jsx já está em v54, mas cifraclub.js não contém o resolvedor v54")
+
+    pkg = root / "package.json"
+    ps = pkg.read_text()
+    ps = re.sub(r'"version"\s*:\s*"[^"]+"', '"version": "1.0.54"', ps, count=1)
+    pkg.write_text(ps)
+
+    cap = root / "capacitor.config.json"
+    cfg = cap.read_text().replace('"skipNativeAuth": true', '"skipNativeAuth": false')
+    cap.write_text(cfg)
+
+    print("Melhorias v54 já presentes no fonte reconstruído. Validação concluída.")
+    raise SystemExit(0)
+
 s, n = re.subn(
     r'\[lookingUp,\s*setLookingUp\]\s*=\s*useState\(false\),\s*\n\s*\[savingCifra,\s*setSavingCifra\]\s*=\s*useState\(false\),',
     '[lookingUp, setLookingUp] = useState(false),\n    [lookupError, setLookupError] = useState(""),\n    [lookupAttempt, setLookupAttempt] = useState(0),\n    [savingCifra, setSavingCifra] = useState(false),',
