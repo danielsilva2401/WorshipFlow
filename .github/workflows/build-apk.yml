@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/build-apk.yml"
       - "source.tgz.b64"
+      - "v54-src-*.b64"
 
 permissions:
   contents: read
@@ -42,7 +43,14 @@ jobs:
       - name: Extrair fonte v52 base
         run: |
           mkdir -p appsrc
-          base64 -d source.tgz.b64 | tar -xzf - -C appsrc
+          cat v54-src-part00.b64 v54-src-part01.b64 v54-src-part02.b64 \
+              v54-src-tail00.b64 v54-src-tail01.b64 v54-src-tail02.b64 \
+              v54-src-tail03.b64 v54-src-tail04.b64 v54-src-tail05.b64 \
+              v54-src-tail06.b64 | tr -d '\n\r ' > source-v54.b64
+          echo "Validando pacote de fonte v54..."
+          base64 -d source-v54.b64 > source-v54.tgz
+          tar -tzf source-v54.tgz >/dev/null
+          tar -xzf source-v54.tgz -C appsrc
           PKG=$(find "$GITHUB_WORKSPACE/appsrc" -name package.json -not -path "*/node_modules/*" | head -1)
           if [ -z "$PKG" ]; then
             echo "package.json não encontrado no source.tgz.b64"
