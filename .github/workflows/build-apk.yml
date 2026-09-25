@@ -1,5 +1,5 @@
 name: Build WorshipFlow APK
-# build fixa 52.1
+# WorshipFlow Android v53
 
 on:
   workflow_dispatch:
@@ -259,14 +259,138 @@ jobs:
           Path("app/android/app/src/main/java/com/worshipflow/app/MainActivity.java").write_text(java)
           PY
 
-      - name: Definir versão v52.1
+      - name: Aplicar acabamento nativo v53
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          res = Path("app/android/app/src/main/res")
+          (res/"values").mkdir(parents=True, exist_ok=True)
+          (res/"values-v31").mkdir(parents=True, exist_ok=True)
+          (res/"drawable").mkdir(parents=True, exist_ok=True)
+          (res/"mipmap-anydpi-v26").mkdir(parents=True, exist_ok=True)
+
+          (res/"values"/"colors.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <color name="wf_bg">#0B1020</color>
+            <color name="wf_primary">#7C3AED</color>
+            <color name="wf_white">#FFFFFF</color>
+          </resources>
+          """)
+
+          (res/"drawable"/"ic_worshipflow_foreground.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#7C3AED" android:pathData="M0,0h108v108h-108z"/>
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M22,31 L32,31 L40,67 L49,42 L59,42 L68,67 L76,31 L86,31 L75,79 L64,79 L54,54 L44,79 L33,79 Z"/>
+          </vector>
+          """)
+
+          (res/"mipmap-anydpi-v26"/"ic_launcher.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/wf_bg"/>
+            <foreground android:drawable="@drawable/ic_worshipflow_foreground"/>
+          </adaptive-icon>
+          """)
+          (res/"mipmap-anydpi-v26"/"ic_launcher_round.xml").write_text((res/"mipmap-anydpi-v26"/"ic_launcher.xml").read_text())
+
+          (res/"drawable"/"splash.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+            <item android:drawable="@color/wf_bg"/>
+            <item android:gravity="center">
+              <inset android:inset="72dp">
+                <bitmap android:gravity="center" android:src="@mipmap/ic_launcher"/>
+              </inset>
+            </item>
+          </layer-list>
+          """)
+
+          (res/"values"/"styles.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+              <item name="colorPrimary">@color/wf_primary</item>
+              <item name="colorPrimaryDark">@color/wf_bg</item>
+              <item name="colorAccent">@color/wf_primary</item>
+            </style>
+            <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+              <item name="android:fontFamily">sans</item>
+              <item name="android:colorAccent">@color/wf_primary</item>
+              <item name="android:navigationBarColor">@color/wf_bg</item>
+              <item name="android:statusBarColor">@color/wf_bg</item>
+              <item name="android:windowLightStatusBar">false</item>
+            </style>
+            <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+              <item name="android:windowBackground">@drawable/splash</item>
+            </style>
+          </resources>
+          """)
+
+          (res/"values-v31"/"styles.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+              <item name="android:windowSplashScreenBackground">@color/wf_bg</item>
+              <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+              <item name="android:windowSplashScreenIconBackgroundColor">@color/wf_bg</item>
+              <item name="android:postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+            </style>
+          </resources>
+          """)
+
+          java = Path("app/android/app/src/main/java/com/worshipflow/app/MainActivity.java")
+          text = java.read_text()
+          text = text.replace("import android.os.Bundle;", """import android.os.Bundle;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.webkit.WebResourceRequest;""")
+
+          text = text.replace("""                      @Override
+                      public void onPageFinished(WebView view, String url) {""", """                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                          Uri uri = request.getUrl();
+                          String host = uri.getHost() == null ? "" : uri.getHost();
+                          if (host.endsWith("worshipflow-f99f6.web.app") || host.endsWith("worshipflow-f99f6.firebaseapp.com")) {
+                              return false;
+                          }
+                          try {
+                              Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                              startActivity(intent);
+                              return true;
+                          } catch (Exception ignored) {
+                              return false;
+                          }
+                      }
+
+                      @Override
+                      public void onPageFinished(WebView view, String url) {""")
+
+          text = text.replace("""              }
+          }
+          ''',""","""              }
+
+              @Override
+              @SuppressWarnings("deprecation")
+              public void onBackPressed() {
+                  if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {
+                      getBridge().getWebView().goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          ''',""")
+          java.write_text(text)
+          PY
+
+      - name: Definir versão v53
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path("app/android/app/build.gradle")
           s=p.read_text()
-          s=s.replace("versionCode 1", "versionCode 521")
-          s=s.replace('versionName "1.0"', 'versionName "1.0.52.1"')
+          s=s.replace("versionCode 1", "versionCode 530")
+          s=s.replace('versionName "1.0"', 'versionName "1.0.53"')
           p.write_text(s)
           PY
 
@@ -289,16 +413,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v52.1-aligned.apk
+          $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v53-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v52.1-Google-Nativo.apk             WorshipFlow-v52.1-aligned.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v53.apk             WorshipFlow-v53-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v52.1-Google-Nativo.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v53.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v52.1-Google-Nativo
-          path: WorshipFlow-v52.1-Google-Nativo.apk
+          name: WorshipFlow-v53
+          path: WorshipFlow-v53.apk
           if-no-files-found: error
           retention-days: 30
