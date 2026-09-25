@@ -1,5 +1,4 @@
 name: Build WorshipFlow APK
-# WorshipFlow Android v53
 
 on:
   workflow_dispatch:
@@ -7,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - ".github/workflows/build-apk.yml"
+      - "source.tgz.b64"
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -39,43 +39,223 @@ jobs:
       - name: Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
-      - name: Criar shell Android com Google nativo
+      - name: Extrair fonte v52 base
         run: |
-          mkdir -p app/www
-          cd app
-          npm init -y
-          npm install --no-audit --no-fund \
-            @capacitor/core@8.5.2 \
-            @capacitor/android@8.5.2 \
-            @capacitor/cli@8.5.2 \
-            @capacitor-firebase/authentication@8.5.2 \
-            firebase@12.19.0
+          mkdir -p appsrc
+          base64 -d source.tgz.b64 | tar -xzf - -C appsrc
+          PKG=$(find "$GITHUB_WORKSPACE/appsrc" -name package.json -not -path "*/node_modules/*" | head -1)
+          if [ -z "$PKG" ]; then
+            echo "package.json não encontrado no source.tgz.b64"
+            exit 1
+          fi
+          APP_DIR=$(dirname "$PKG")
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+          echo "Fonte encontrada em $APP_DIR"
 
-          printf '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WorshipFlow</title></head><body><p>Carregando WorshipFlow...</p></body></html>' > www/index.html
+      - name: Aplicar melhorias v54 em Cifras
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
 
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.worshipflow.app",
-            "appName": "WorshipFlow",
-            "webDir": "www",
-            "server": {
-              "url": "https://worshipflow-f99f6.web.app",
-              "cleartext": false
-            },
-            "plugins": {
-              "FirebaseAuthentication": {
-                "skipNativeAuth": false,
-                "providers": ["google.com"]
-              }
+          root=Path(os.environ["APP_DIR"])
+          app=root/"src"/"App.jsx"
+          s=app.read_text()
+
+          s=s.replace(
+          '''    [lookingUp, setLookingUp] = useState(false),
+              [savingCifra, setSavingCifra] = useState(false),''',
+          '''    [lookingUp, setLookingUp] = useState(false),
+              [lookupError, setLookupError] = useState(""),
+              [lookupAttempt, setLookupAttempt] = useState(0),
+              [savingCifra, setSavingCifra] = useState(false),''')
+
+          old='''    setLookingUp(!hasSavedChartForVariant);
+
+              (async () => {
+                let current = song;
+                const attempts = hasSavedChartForVariant ? 1 : 3;
+                for (let attempt = 0; attempt < attempts && active; attempt += 1) {
+                  try {
+                    const next = await autoLookup(current, {
+                      force: !hasSavedChartForVariant,
+                      variant,
+                      lyricsTimeoutMs: hasSavedChartForVariant ? 4500 : 6500,
+                    });
+                    if (!active) return;
+                    if (next) {
+                      current = next;
+                      setResolvedSong(next);
+                      if (hasSavedChartForVariant || hasUsableChords(next)) return;
+                    }
+                  } catch (error) {
+                    console.warn(`Tentativa ${attempt + 1} de cifra não concluiu:`, error);
+                  }
+                  if (attempt < attempts - 1 && active) await wait(attempt === 0 ? 1200 : 2800);
+                }
+              })().finally(() => {
+                if (active) {
+                  setLookingUp(false);
+                }
+              });'''
+          new='''    setLookingUp(!hasSavedChartForVariant);
+              setLookupError("");
+              setLookupAttempt(0);
+
+              const withTimeout = (promise, ms) => Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Tempo limite da busca atingido.")), ms)),
+              ]);
+
+              (async () => {
+                let current = song;
+                const attempts = hasSavedChartForVariant ? 1 : 2;
+                let lastError = null;
+                for (let attempt = 0; attempt < attempts && active; attempt += 1) {
+                  setLookupAttempt(attempt + 1);
+                  try {
+                    const next = await withTimeout(autoLookup(current, {
+                      force: !hasSavedChartForVariant,
+                      variant,
+                      lyricsTimeoutMs: hasSavedChartForVariant ? 3500 : 5200,
+                    }), hasSavedChartForVariant ? 5500 : 9000);
+                    if (!active) return;
+                    if (next) {
+                      current = next;
+                      setResolvedSong(next);
+                      if (hasSavedChartForVariant || hasUsableChords(next)) {
+                        setLookupError("");
+                        return;
+                      }
+                    }
+                  } catch (error) {
+                    lastError = error;
+                    console.warn(`Tentativa ${attempt + 1} de cifra não concluiu:`, error);
+                  }
+                  if (attempt < attempts - 1 && active) await wait(900);
+                }
+                if (active && !hasSavedChartForVariant && !hasUsableChords(current)) {
+                  setLookupError(lastError?.message || "Não encontramos acordes automaticamente agora.");
+                }
+              })().finally(() => {
+                if (active) {
+                  setLookingUp(false);
+                  setLookupAttempt(0);
+                }
+              });'''
+          if old not in s:
+              raise SystemExit("Bloco de busca da cifra não encontrado")
+          s=s.replace(old,new)
+
+          s=s.replace(
+          '''          <span><strong>Buscando letra + cifra automaticamente…</strong><small>Localizando a letra, identificando o título correto e preparando os acordes para o WorshipFlow.</small></span>''',
+          '''          <span><strong>Buscando letra + cifra automaticamente…</strong><small>{lookupAttempt > 1 ? "Tentando uma rota alternativa de acordes. Isso leva só mais alguns segundos." : "Consultando as fontes disponíveis em paralelo e preparando os acordes para o WorshipFlow."}</small></span>''')
+
+          old_retry='''      {!lookingUp && transientInternetLyrics && activeSong.lyrics_runtime_kind !== "lyrics+chords" && (
+                <Button className="secondary wide" icon={RefreshCw} onClick={() => setLookupNonce((value) => value + 1)}>
+                  Tentar buscar acordes novamente
+                </Button>
+              )}'''
+          new_retry='''      {!lookingUp && lookupError && !chart && (
+                <div className="cifra-source-note cifra-lookup-error">
+                  <RefreshCw size={16} />
+                  <span><strong>A busca automática não concluiu</strong><small>{lookupError} Você pode tentar novamente agora ou abrir a busca do Cifra Club abaixo.</small></span>
+                </div>
+              )}
+              {!lookingUp && ((transientInternetLyrics && activeSong.lyrics_runtime_kind !== "lyrics+chords") || (lookupError && !chart)) && (
+                <Button className="secondary wide" icon={RefreshCw} onClick={() => { setLookupError(""); setLookupNonce((value) => value + 1); }}>
+                  Tentar buscar acordes novamente
+                </Button>
+              )}'''
+          if old_retry not in s:
+              raise SystemExit("Bloco de retry da cifra não encontrado")
+          s=s.replace(old_retry,new_retry)
+
+          s=s.replace(
+          '''                setVariant("simplified");
+                        if (!song.chords) setResolvedSong({ ...song, cifra_club_chords: "", cifra_line_map: [], cifra_variant: "simplified" });''',
+          '''                setVariant("simplified");
+                        setLookupError("");
+                        if (!song.chords) setResolvedSong({ ...song, cifra_club_chords: "", cifra_line_map: [], cifra_variant: "simplified" });''')
+          s=s.replace(
+          '''                setVariant("principal");
+                        if (!song.chords) setResolvedSong({ ...song, cifra_club_chords: "", cifra_line_map: [], cifra_variant: "principal" });''',
+          '''                setVariant("principal");
+                        setLookupError("");
+                        if (!song.chords) setResolvedSong({ ...song, cifra_club_chords: "", cifra_line_map: [], cifra_variant: "principal" });''')
+
+          app.write_text(s)
+
+          cifra=root/"src"/"cifraclub.js"
+          c=cifra.read_text()
+          old_lookup='''  // v44: primeiro usa o Cloudflare Worker gratuito. O navegador continua isolado das
+            // paginas de cifra, mas sem Cloud Functions/Blaze. Os readers ficam apenas como fallback.
+            let found=await tryCloudflareBackend(base,fetcher,Math.min(timeoutMs,12000),requestedVariant);
+            if(!found){
+              const primary=await Promise.allSettled([
+                tryReader(base,fetcher,timeoutMs),
+                tryRecifraReader(base,fetcher,timeoutMs),
+              ]);
+              const primaryResults=primary
+                .filter(item=>item.status==='fulfilled' && item.value)
+                .map(item=>item.value)
+                .sort((a,b)=>cifraCompletenessScore(b)-cifraCompletenessScore(a));
+              found=primaryResults[0] || null;
             }
-          }
-          EOF
+            if(!found) found=await tryLegacyApi(base,fetcher,Math.min(timeoutMs,4500));
+            if(!found) found=await tryRawProxyPages(base,fetcher,Math.min(timeoutMs,6000));'''
+          new_lookup='''  // v54: fontes principais em paralelo para não prender a interface numa fonte lenta.
+            const primary=await Promise.allSettled([
+              tryCloudflareBackend(base,fetcher,Math.min(timeoutMs,8000),requestedVariant),
+              tryReader(base,fetcher,Math.min(timeoutMs,7000)),
+              tryRecifraReader(base,fetcher,Math.min(timeoutMs,7000)),
+            ]);
+            const primaryResults=primary
+              .filter(item=>item.status==='fulfilled' && item.value)
+              .map(item=>item.value)
+              .sort((a,b)=>cifraCompletenessScore(b)-cifraCompletenessScore(a));
+            let found=primaryResults[0] || null;
+            if(!found) found=await tryLegacyApi(base,fetcher,Math.min(timeoutMs,3500));
+            if(!found) found=await tryRawProxyPages(base,fetcher,Math.min(timeoutMs,4500));'''
+          if old_lookup not in c:
+              raise SystemExit("Bloco do resolvedor Cifra Club não encontrado")
+          cifra.write_text(c.replace(old_lookup,new_lookup))
 
-          npx cap add android
+          css=root/"src"/"style.css"
+          cs=css.read_text()
+          if ".cifra-lookup-error" not in cs:
+              cs += '\n.cifra-lookup-error{border-color:rgba(255,168,76,.28);background:rgba(255,168,76,.08)}.cifra-lookup-error>svg{color:#ffb35c}html[data-theme="light"] .cifra-lookup-error{background:#fff7ed;border-color:rgba(234,88,12,.2)}\n'
+          css.write_text(cs)
 
-      - name: Adicionar Firebase Android
+          pkg=root/"package.json"
+          ps=pkg.read_text().replace('"version": "1.0.52"','"version": "1.0.54"')
+          pkg.write_text(ps)
+
+          cap=root/"capacitor.config.json"
+          cfg=cap.read_text().replace('"skipNativeAuth": true','"skipNativeAuth": false')
+          cap.write_text(cfg)
+          PY
+
+      - name: Instalar dependências e testar cifra
+        working-directory: ${{ env.APP_DIR }}
         run: |
-          cat > app/android/app/google-services.json <<'EOF'
+          npm install --no-audit --no-fund
+          node --test             tests/saved-cifra-v50.test.mjs             tests/v51-stability.test.mjs             tests/cifra-v44.test.mjs             tests/cifra-v46-variants.test.mjs             tests/cifra-v47-serverless-source.test.mjs             tests/cifraclub-lookup.test.mjs             tests/cifraclub-resolver-v23.test.mjs             tests/cifraclub-ui.test.mjs
+
+      - name: Build web v54
+        working-directory: ${{ env.APP_DIR }}
+        run: npm run build
+
+      - name: Gerar projeto Android local
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+
+      - name: Configurar Firebase Android
+        run: |
+          cat > "$APP_DIR/android/app/google-services.json" <<'EOF'
           {
             "project_info": {
               "project_number": "678699277566",
@@ -91,14 +271,6 @@ jobs:
                   }
                 },
                 "oauth_client": [
-                  {
-                    "client_id": "678699277566-6u8u6ah8le6a41dbuv2bb5567l1nvnm4.apps.googleusercontent.com",
-                    "client_type": 1,
-                    "android_info": {
-                      "package_name": "com.worshipflow.app",
-                      "certificate_hash": "97c55aa425dcb522f82d6b2f48945aeeedabf9c3"
-                    }
-                  },
                   {
                     "client_id": "678699277566-vlk25mdcb6f5mpthhiau7ur0g1uelh8q.apps.googleusercontent.com",
                     "client_type": 3
@@ -127,272 +299,50 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
-
-          p = Path("app/android/variables.gradle")
-          s = p.read_text()
-          if "rgcfaIncludeGoogle" not in s:
-              s = s.rstrip() + "\n\next {\n    rgcfaIncludeGoogle = true\n    androidxCredentialsVersion = '1.3.0'\n}\n"
-          p.write_text(s)
-
-          root = Path("app/android/build.gradle")
-          s = root.read_text()
-          needle = "dependencies {"
+          import os, re
+          root=Path(os.environ["APP_DIR"])
+          gradle=root/"android"/"build.gradle"
+          s=gradle.read_text()
           if "com.google.gms:google-services" not in s:
-              s = s.replace(needle, needle + "\n        classpath 'com.google.gms:google-services:4.4.3'", 1)
-          root.write_text(s)
+              s=s.replace("dependencies {","dependencies {\n        classpath 'com.google.gms:google-services:4.4.3'",1)
+          gradle.write_text(s)
 
-          app = Path("app/android/app/build.gradle")
-          s = app.read_text()
+          app=root/"android"/"app"/"build.gradle"
+          s=app.read_text()
           if "com.google.gms.google-services" not in s:
-              s = s.rstrip() + "\n\napply plugin: 'com.google.gms.google-services'\n"
+              s=s.rstrip()+"\n\napply plugin: 'com.google.gms.google-services'\n"
+          s=re.sub(r'versionCode\s+\d+','versionCode 540',s)
+          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.54"',s)
           app.write_text(s)
+
+          vars=root/"android"/"variables.gradle"
+          s=vars.read_text()
+          if "rgcfaIncludeGoogle" not in s:
+              s=s.rstrip()+"\n\next {\n    rgcfaIncludeGoogle = true\n    androidxCredentialsVersion = '1.3.0'\n}\n"
+          vars.write_text(s)
           PY
 
-          cd app
+          cd "$APP_DIR"
           npx cap update android
           npx cap sync android
 
-      - name: Injetar login Google nativo na PWA
+      - name: Aplicar ícone PWA no Android
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import json
-
-          js = r"""
-          (() => {
-            if (window.__WF_NATIVE_GOOGLE_LOGIN__) return;
-            window.__WF_NATIVE_GOOGLE_LOGIN__ = true;
-
-            const isGoogleButton = (node) => {
-              const el = node && node.closest ? node.closest('button,a,[role="button"]') : null;
-              if (!el) return null;
-              return /entrar\s+com\s+google/i.test((el.innerText || el.textContent || '').trim()) ? el : null;
-            };
-
-            document.addEventListener('click', async (event) => {
-              const button = isGoogleButton(event.target);
-              if (!button) return;
-
-              const nativeAuth = window.Capacitor?.Plugins?.FirebaseAuthentication;
-              if (!nativeAuth?.signInWithGoogle) return;
-
-              event.preventDefault();
-              event.stopPropagation();
-              event.stopImmediatePropagation();
-
-              const oldText = button.innerText;
-              button.disabled = true;
-              button.innerText = 'Entrando com Google...';
-
-              try {
-                const result = await nativeAuth.signInWithGoogle();
-                const idToken = result?.credential?.idToken || null;
-                const accessToken = result?.credential?.accessToken || null;
-
-                if (!idToken && !accessToken) {
-                  throw new Error('O Google não retornou credenciais.');
-                }
-
-                const appMod = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js');
-                const authMod = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');
-
-                const firebaseConfig = {
-                  apiKey: 'AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4',
-                  authDomain: 'worshipflow-f99f6.firebaseapp.com',
-                  projectId: 'worshipflow-f99f6',
-                  appId: '1:678699277566:web:c9115862cfac49485319af'
-                };
-
-                const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
-                const auth = authMod.getAuth(app);
-                await authMod.setPersistence(auth, authMod.browserLocalPersistence);
-                const credential = authMod.GoogleAuthProvider.credential(idToken, accessToken);
-                await authMod.signInWithCredential(auth, credential);
-
-                window.location.reload();
-              } catch (error) {
-                console.error('WorshipFlow native Google login:', error);
-                alert('Não foi possível entrar com Google. ' + (error?.message || 'Tente novamente.'));
-                button.disabled = false;
-                button.innerText = oldText;
-              }
-            }, true);
-          })();
-          """
-
-          encoded = json.dumps(js)
-          java = f'''package com.worshipflow.app;
-
-          import android.os.Bundle;
-          import android.webkit.WebView;
-          import com.getcapacitor.BridgeActivity;
-          import com.getcapacitor.BridgeWebViewClient;
-
-          public class MainActivity extends BridgeActivity {{
-              private boolean nativeLoginInjected = false;
-              private static final String LOGIN_JS = {encoded};
-
-              @Override
-              public void onResume() {{
-                  super.onResume();
-                  if (nativeLoginInjected || getBridge() == null || getBridge().getWebView() == null) return;
-
-                  WebView webView = getBridge().getWebView();
-                  webView.setWebViewClient(new BridgeWebViewClient(getBridge()) {{
-                      @Override
-                      public void onPageFinished(WebView view, String url) {{
-                          super.onPageFinished(view, url);
-                          if (url != null && url.startsWith("https://worshipflow-f99f6.")) {{
-                              view.evaluateJavascript(LOGIN_JS, null);
-                          }}
-                      }}
-                  }});
-
-                  String current = webView.getUrl();
-                  if (current != null && current.startsWith("https://worshipflow-f99f6.")) {{
-                      webView.evaluateJavascript(LOGIN_JS, null);
-                  }}
-                  nativeLoginInjected = true;
-              }}
-          }}
-          '''
-          Path("app/android/app/src/main/java/com/worshipflow/app/MainActivity.java").write_text(java)
-          PY
-
-      - name: Aplicar acabamento nativo v53
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          res = Path("app/android/app/src/main/res")
-          (res/"values").mkdir(parents=True, exist_ok=True)
-          (res/"values-v31").mkdir(parents=True, exist_ok=True)
-          (res/"drawable").mkdir(parents=True, exist_ok=True)
-          (res/"mipmap-anydpi-v26").mkdir(parents=True, exist_ok=True)
-
-          (res/"values"/"colors.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <color name="wf_bg">#0B1020</color>
-            <color name="wf_primary">#7C3AED</color>
-            <color name="wf_white">#FFFFFF</color>
-          </resources>
-          """)
-
-          # Usa exatamente o mesmo PNG de 512x512 publicado pela PWA.
-          (res/"drawable-nodpi").mkdir(parents=True, exist_ok=True)
-
-          (res/"drawable"/"wf_splash.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-            <item android:drawable="@color/wf_bg"/>
-            <item android:gravity="center">
-              <inset android:inset="72dp">
-                <bitmap android:gravity="center" android:src="@drawable/wf_pwa_icon"/>
-              </inset>
-            </item>
-          </layer-list>
-          """)
-
-          (res/"values"/"styles.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-              <item name="colorPrimary">@color/wf_primary</item>
-              <item name="colorPrimaryDark">@color/wf_bg</item>
-              <item name="colorAccent">@color/wf_primary</item>
-            </style>
-            <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
-              <item name="android:fontFamily">sans</item>
-              <item name="android:colorAccent">@color/wf_primary</item>
-              <item name="android:navigationBarColor">@color/wf_bg</item>
-              <item name="android:statusBarColor">@color/wf_bg</item>
-              <item name="android:windowLightStatusBar">false</item>
-            </style>
-            <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-              <item name="android:windowBackground">@drawable/wf_splash</item>
-            </style>
-          </resources>
-          """)
-
-          (res/"values-v31"/"styles.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-              <item name="android:windowSplashScreenBackground">@color/wf_bg</item>
-              <item name="android:windowSplashScreenAnimatedIcon">@drawable/wf_pwa_icon</item>
-              <item name="android:windowSplashScreenIconBackgroundColor">@color/wf_bg</item>
-            </style>
-          </resources>
-          """)
-
-          java = Path("app/android/app/src/main/java/com/worshipflow/app/MainActivity.java")
-          text = java.read_text()
-          text = text.replace("import android.os.Bundle;", """import android.os.Bundle;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.webkit.WebResourceRequest;""")
-
-          text = text.replace("""                      @Override
-                      public void onPageFinished(WebView view, String url) {""", """                      @Override
-                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                          Uri uri = request.getUrl();
-                          String host = uri.getHost() == null ? "" : uri.getHost();
-                          if (host.endsWith("worshipflow-f99f6.web.app") || host.endsWith("worshipflow-f99f6.firebaseapp.com")) {
-                              return false;
-                          }
-                          try {
-                              Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-                              startActivity(intent);
-                              return true;
-                          } catch (Exception ignored) {
-                              return false;
-                          }
-                      }
-
-                      @Override
-                      public void onPageFinished(WebView view, String url) {""")
-
-          text = text.replace("""              }
-          }
-          ''',""","""              }
-
-              @Override
-              @SuppressWarnings("deprecation")
-              public void onBackPressed() {
-                  if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {
-                      getBridge().getWebView().goBack();
-                  } else {
-                      super.onBackPressed();
-                  }
-              }
-          }
-          ''',""")
-          java.write_text(text)
-          PY
-
-          curl -fsSL "https://worshipflow-f99f6.web.app/icons/icon-512.png?v=21" \
-            -o app/android/app/src/main/res/drawable-nodpi/wf_pwa_icon.png
+          mkdir -p "$APP_DIR/android/app/src/main/res/drawable-nodpi"
+          curl -fsSL "https://worshipflow-f99f6.web.app/icons/icon-512.png?v=21"             -o "$APP_DIR/android/app/src/main/res/drawable-nodpi/wf_pwa_icon.png"
 
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("app/android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-          import re
-          s = re.sub(r'android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/wf_pwa_icon"', s)
-          s = re.sub(r'android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/wf_pwa_icon"', s)
-          p.write_text(s)
-          PY
-
-      - name: Definir versão v53.1
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("app/android/app/build.gradle")
+          import os, re
+          p=Path(os.environ["APP_DIR"])/"android"/"app"/"src"/"main"/"AndroidManifest.xml"
           s=p.read_text()
-          s=s.replace("versionCode 1", "versionCode 531")
-          s=s.replace('versionName "1.0"', 'versionName "1.0.53.1"')
+          s=re.sub(r'android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/wf_pwa_icon"', s)
+          s=re.sub(r'android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/wf_pwa_icon"', s)
           p.write_text(s)
           PY
 
       - name: Compilar APK release
-        working-directory: app/android
+        working-directory: ${{ env.APP_DIR }}/android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease
@@ -410,16 +360,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          $ANDROID_HOME/build-tools/36.0.0/zipalign -p -f 4             app/android/app/build/outputs/apk/release/app-release-unsigned.apk             WorshipFlow-v53.1-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v54-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v53.1.apk             WorshipFlow-v53.1-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v54.apk             WorshipFlow-v54-aligned.apk
 
-          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --verbose --print-certs WorshipFlow-v53.1.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v54.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v53.1
-          path: WorshipFlow-v53.1.apk
+          name: WorshipFlow-v54
+          path: WorshipFlow-v54.apk
           if-no-files-found: error
           retention-days: 30
