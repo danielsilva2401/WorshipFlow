@@ -48,7 +48,7 @@ jobs:
             @capacitor/android@8.5.2 \
             @capacitor/cli@8.5.2 \
             @capacitor-firebase/authentication@8.5.2 \
-            firebase@12.0.0
+            firebase@12.19.0
 
           printf '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WorshipFlow</title></head><body><p>Carregando WorshipFlow...</p></body></html>' > www/index.html
 
@@ -192,8 +192,8 @@ jobs:
                   throw new Error('O Google não retornou credenciais.');
                 }
 
-                const appMod = await import('https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js');
-                const authMod = await import('https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js');
+                const appMod = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js');
+                const authMod = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');
 
                 const firebaseConfig = {
                   apiKey: 'AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4',
