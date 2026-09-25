@@ -87,7 +87,7 @@ jobs:
             echo "Diretório tests não existe neste fonte; seguindo para o build web."
           fi
 
-      - name: Build web v54.1
+      - name: Build web v54.2
         working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
@@ -116,6 +116,14 @@ jobs:
                   }
                 },
                 "oauth_client": [
+                  {
+                    "client_id": "678699277566-6u8u6ah8le6a41dbuv2bb5567l1nvnm4.apps.googleusercontent.com",
+                    "client_type": 1,
+                    "android_info": {
+                      "package_name": "com.worshipflow.app",
+                      "certificate_hash": "97c55aa425dcb522f82d6b2f48945aeeedabf9c3"
+                    }
+                  },
                   {
                     "client_id": "678699277566-vlk25mdcb6f5mpthhiau7ur0g1uelh8q.apps.googleusercontent.com",
                     "client_type": 3
@@ -156,8 +164,8 @@ jobs:
           s=app.read_text()
           if "com.google.gms.google-services" not in s:
               s=s.rstrip()+"\n\napply plugin: 'com.google.gms.google-services'\n"
-          s=re.sub(r'versionCode\s+\d+','versionCode 541',s)
-          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.54.1"',s)
+          s=re.sub(r'versionCode\s+\d+','versionCode 542',s)
+          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.54.2"',s)
           app.write_text(s)
 
           vars=root/"android"/"variables.gradle"
@@ -170,6 +178,120 @@ jobs:
           cd "$APP_DIR"
           npx cap update android
           npx cap sync android
+
+      - name: Restaurar login Google nativo v54.2
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os
+
+          root = Path(os.environ["APP_DIR"])
+          js = r"""
+          (() => {
+            if (window.__WF_NATIVE_GOOGLE_LOGIN_V542__) return;
+            window.__WF_NATIVE_GOOGLE_LOGIN_V542__ = true;
+
+            const findGoogleButton = (node) => {
+              const el = node && node.closest ? node.closest('button,a,[role="button"]') : null;
+              if (!el) return null;
+              const txt = (el.innerText || el.textContent || '').trim();
+              return /entrar\s+com\s+google/i.test(txt) ? el : null;
+            };
+
+            document.addEventListener('click', async (event) => {
+              const button = findGoogleButton(event.target);
+              if (!button) return;
+
+              const nativeAuth = window.Capacitor?.Plugins?.FirebaseAuthentication;
+              if (!nativeAuth?.signInWithGoogle) {
+                console.error('FirebaseAuthentication nativo indisponível.');
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+
+              const oldText = button.innerText;
+              button.disabled = true;
+              button.innerText = 'Entrando com Google...';
+
+              try {
+                const result = await nativeAuth.signInWithGoogle();
+                const idToken = result?.credential?.idToken || null;
+                const accessToken = result?.credential?.accessToken || null;
+
+                if (!idToken && !accessToken) {
+                  throw new Error('O Google não retornou credenciais.');
+                }
+
+                const appMod = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js');
+                const authMod = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');
+
+                const firebaseConfig = {
+                  apiKey: 'AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4',
+                  authDomain: 'worshipflow-f99f6.firebaseapp.com',
+                  projectId: 'worshipflow-f99f6',
+                  appId: '1:678699277566:web:c9115862cfac49485319af'
+                };
+
+                const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
+                const auth = authMod.getAuth(app);
+                await authMod.setPersistence(auth, authMod.browserLocalPersistence);
+                const credential = authMod.GoogleAuthProvider.credential(idToken, accessToken);
+                await authMod.signInWithCredential(auth, credential);
+                window.location.reload();
+              } catch (error) {
+                console.error('WorshipFlow native Google login:', error);
+                alert('Não foi possível entrar com Google. ' + (error?.message || 'Tente novamente.'));
+                button.disabled = false;
+                button.innerText = oldText;
+              }
+            }, true);
+          })();
+          """
+
+          encoded = json.dumps(js)
+          java = f'''package com.worshipflow.app;
+
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebViewClient;
+
+          public class MainActivity extends BridgeActivity {{
+              private boolean loginHookInstalled = false;
+              private static final String LOGIN_JS = {encoded};
+
+              private void injectLogin(WebView webView) {{
+                  if (webView != null) {{
+                      webView.evaluateJavascript(LOGIN_JS, null);
+                  }}
+              }}
+
+              @Override
+              public void onResume() {{
+                  super.onResume();
+                  if (loginHookInstalled || getBridge() == null || getBridge().getWebView() == null) return;
+
+                  WebView webView = getBridge().getWebView();
+                  webView.setWebViewClient(new BridgeWebViewClient(getBridge()) {{
+                      @Override
+                      public void onPageFinished(WebView view, String url) {{
+                          super.onPageFinished(view, url);
+                          injectLogin(view);
+                      }}
+                  }});
+
+                  injectLogin(webView);
+                  loginHookInstalled = true;
+              }}
+          }}
+          '''
+          target = root / "android" / "app" / "src" / "main" / "java" / "com" / "worshipflow" / "app" / "MainActivity.java"
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(java)
+          print("Login Google nativo v54.2 injetado em", target)
+          PY
 
       - name: Aplicar ícone PWA no Android
         run: |
@@ -205,16 +327,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v54.1-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v54.2-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v54.1.apk             WorshipFlow-v54.1-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v54.2.apk             WorshipFlow-v54.2-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v54.1.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v54.2.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v54.1
-          path: WorshipFlow-v54.1.apk
+          name: WorshipFlow-v54.2
+          path: WorshipFlow-v54.2.apk
           if-no-files-found: error
           retention-days: 30
