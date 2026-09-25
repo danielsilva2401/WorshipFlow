@@ -9,6 +9,7 @@ on:
       - "source.tgz.b64"
       - "v54-src-*.b64"
       - "scripts/apply_v54.py"
+      - "scripts/apply_v55.py"
 
 permissions:
   contents: read
@@ -64,6 +65,9 @@ jobs:
       - name: Aplicar melhorias v54 em Cifras
         run: python3 scripts/apply_v54.py "$APP_DIR"
 
+      - name: Aplicar melhorias v55 em Escalas e Ensaios
+        run: python3 scripts/apply_v55.py "$APP_DIR"
+
       - name: Configurar Firebase Web e YouTube
         env:
           VITE_YOUTUBE_API_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY }}
@@ -112,7 +116,7 @@ jobs:
             echo "Diretório tests não existe neste fonte; seguindo para o build web."
           fi
 
-      - name: Build web v54.3
+      - name: Build web v55
         working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
@@ -189,8 +193,8 @@ jobs:
           s=app.read_text()
           if "com.google.gms.google-services" not in s:
               s=s.rstrip()+"\n\napply plugin: 'com.google.gms.google-services'\n"
-          s=re.sub(r'versionCode\s+\d+','versionCode 543',s)
-          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.54.3"',s)
+          s=re.sub(r'versionCode\s+\d+','versionCode 550',s)
+          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.55"',s)
           app.write_text(s)
 
           vars=root/"android"/"variables.gradle"
@@ -204,7 +208,7 @@ jobs:
           npx cap update android
           npx cap sync android
 
-      - name: Restaurar login Google nativo v54.3
+      - name: Restaurar login Google nativo v55
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -352,16 +356,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v54.3-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v55-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v54.3.apk             WorshipFlow-v54.3-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v55.apk             WorshipFlow-v55-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v54.3.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v55.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v54.3
-          path: WorshipFlow-v54.3.apk
+          name: WorshipFlow-v55
+          path: WorshipFlow-v55.apk
           if-no-files-found: error
           retention-days: 30
