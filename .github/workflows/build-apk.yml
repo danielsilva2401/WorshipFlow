@@ -8,6 +8,7 @@ on:
       - ".github/workflows/build-apk.yml"
       - "source.tgz.b64"
       - "v54-src-*.b64"
+      - "scripts/apply_v54.py"
 
 permissions:
   contents: read
