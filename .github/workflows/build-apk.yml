@@ -11,6 +11,9 @@ on:
       - "scripts/apply_v54.py"
       - "scripts/apply_v55.py"
       - "scripts/apply_v56.py"
+      - "scripts/apply_v57.py"
+      - "scripts/apply_v58.py"
+      - "features/song-suggestions/**"
 
 permissions:
   contents: read
@@ -72,6 +75,11 @@ jobs:
       - name: Aplicar melhorias v56 em Notificações e UX mobile
         run: python3 scripts/apply_v56.py "$APP_DIR"
 
+      - name: Aplicar sugestões de músicas v58
+        run: |
+          node --test features/song-suggestions/suggestions.test.mjs
+          python3 scripts/apply_v58.py "$APP_DIR"
+
       - name: Configurar Firebase Web e YouTube
         env:
           VITE_YOUTUBE_API_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY }}
@@ -120,7 +128,7 @@ jobs:
             echo "Diretório tests não existe neste fonte; seguindo para o build web."
           fi
 
-      - name: Build web v56
+      - name: Build web v58
         working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
@@ -197,8 +205,8 @@ jobs:
           s=app.read_text()
           if "com.google.gms.google-services" not in s:
               s=s.rstrip()+"\n\napply plugin: 'com.google.gms.google-services'\n"
-          s=re.sub(r'versionCode\s+\d+','versionCode 560',s)
-          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.56"',s)
+          s=re.sub(r'versionCode\s+\d+','versionCode 580',s)
+          s=re.sub(r'versionName\s+"[^"]+"','versionName "1.0.58"',s)
           app.write_text(s)
 
           vars=root/"android"/"variables.gradle"
@@ -360,16 +368,16 @@ jobs:
 
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > worshipflow-release.jks
 
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v56-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4             "$APP_DIR/android/app/build/outputs/apk/release/app-release-unsigned.apk"             WorshipFlow-v58-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v56.apk             WorshipFlow-v56-aligned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign             --ks worshipflow-release.jks             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD"             --out WorshipFlow-v58.apk             WorshipFlow-v58-aligned.apk
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v56.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs WorshipFlow-v58.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WorshipFlow-v56
-          path: WorshipFlow-v56.apk
+          name: WorshipFlow-v58
+          path: WorshipFlow-v58.apk
           if-no-files-found: error
           retention-days: 30
