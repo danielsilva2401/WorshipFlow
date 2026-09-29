@@ -1,0 +1,125 @@
+name: Deploy WorshipFlow PWA - Smart Song Recommendations
+
+on:
+  push:
+    branches: [ feature/pwa-smart-song-recommendations ]
+    paths:
+      - ".github/workflows/deploy-pwa-song-recommendations.yml"
+      - "features/pwa-smart-song-recommendations/**"
+      - "scripts/apply_pwa_smart_suggestions.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-pwa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_WORSHIPFLOW_F99F6 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test recommendation engine
+        run: node --experimental-default-type=module --test features/pwa-smart-song-recommendations/recommendations.test.mjs
+
+      - name: Reconstruct current WorshipFlow source
+        run: |
+          mkdir -p appsrc
+          cat v54-src-part00.b64 v54-src-part01.b64 v54-src-part02.b64 \
+              v54-src-tail00.b64 v54-src-tail01.b64 v54-src-tail02.b64 \
+              v54-src-tail03.b64 v54-src-tail04.b64 v54-src-tail05.b64 \
+              v54-src-tail06.b64 | tr -d '\n\r ' > source-v54.b64
+          base64 -d source-v54.b64 > source-v54.tgz
+          tar -tzf source-v54.tgz >/dev/null
+          tar -xzf source-v54.tgz -C appsrc
+          PKG=$(find "$GITHUB_WORKSPACE/appsrc" -name package.json -not -path "*/node_modules/*" | head -1)
+          if [ -z "$PKG" ]; then
+            echo "package.json não encontrado."
+            exit 1
+          fi
+          APP_DIR=$(dirname "$PKG")
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+      - name: Apply stable PWA layers
+        run: |
+          python3 scripts/apply_v54.py "$APP_DIR"
+          python3 scripts/apply_v55.py "$APP_DIR"
+          python3 scripts/apply_v56.py "$APP_DIR"
+
+      - name: Apply smart song recommendations
+        run: python3 scripts/apply_pwa_smart_suggestions.py "$APP_DIR"
+
+      - name: Configure Firebase Web and YouTube
+        env:
+          VITE_YOUTUBE_API_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY }}
+        run: |
+          if [ -z "$VITE_YOUTUBE_API_KEY" ]; then
+            echo "Secret VITE_YOUTUBE_API_KEY não configurado."
+            exit 1
+          fi
+          echo "VITE_FIREBASE_API_KEY=AIzaSyBylMmRmB2-0xVNGL0pb8abnRsWKKZP4C4" > "$APP_DIR/.env.production"
+          echo "VITE_FIREBASE_AUTH_DOMAIN=worshipflow-f99f6.firebaseapp.com" >> "$APP_DIR/.env.production"
+          echo "VITE_FIREBASE_PROJECT_ID=worshipflow-f99f6" >> "$APP_DIR/.env.production"
+          echo "VITE_FIREBASE_APP_ID=1:678699277566:web:c9115862cfac49485319af" >> "$APP_DIR/.env.production"
+          printf 'VITE_YOUTUBE_API_KEY=%s\n' "$VITE_YOUTUBE_API_KEY" >> "$APP_DIR/.env.production"
+
+      - name: Install dependencies and build PWA
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          npm install --no-audit --no-fund
+          if [ -d tests ]; then
+            mapfile -t TEST_FILES < <(find tests -maxdepth 1 -type f \( -name "*.test.mjs" -o -name "*.test.js" \) | sort)
+            if [ "${#TEST_FILES[@]}" -gt 0 ]; then
+              node --test "${TEST_FILES[@]}"
+            fi
+          fi
+          npm run build
+
+      - name: Prepare Firebase Hosting config
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          cat > firebase.json <<'EOF'
+          {
+            "hosting": {
+              "public": "dist",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "rewrites": [
+                {
+                  "source": "**",
+                  "destination": "/index.html"
+                }
+              ]
+            }
+          }
+          EOF
+
+      - name: Deploy PWA to Firebase Hosting
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+            export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+            echo "Usando Service Account do GitHub Secrets."
+            npx --yes firebase-tools deploy --only hosting --project worshipflow-f99f6 --non-interactive
+          elif [ -n "$FIREBASE_TOKEN" ]; then
+            echo "Usando FIREBASE_TOKEN do GitHub Secrets."
+            npx --yes firebase-tools deploy --only hosting --project worshipflow-f99f6 --token "$FIREBASE_TOKEN" --non-interactive
+          else
+            echo "Nenhuma credencial de deploy Firebase encontrada."
+            echo "Configure FIREBASE_SERVICE_ACCOUNT_WORSHIPFLOW_F99F6 ou FIREBASE_TOKEN nos Secrets do repositório."
+            exit 2
+          fi
