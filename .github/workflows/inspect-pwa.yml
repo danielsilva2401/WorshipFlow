@@ -1,0 +1,43 @@
+name: Inspect WorshipFlow PWA source
+
+on:
+  push:
+    branches: [ feature/pwa-smart-song-recommendations ]
+    paths:
+      - ".github/workflows/inspect-pwa.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct current app source
+        run: |
+          mkdir -p appsrc
+          cat v54-src-part00.b64 v54-src-part01.b64 v54-src-part02.b64 \
+              v54-src-tail00.b64 v54-src-tail01.b64 v54-src-tail02.b64 \
+              v54-src-tail03.b64 v54-src-tail04.b64 v54-src-tail05.b64 \
+              v54-src-tail06.b64 | tr -d '\n\r ' > source-v54.b64
+          base64 -d source-v54.b64 > source-v54.tgz
+          tar -xzf source-v54.tgz -C appsrc
+          PKG=$(find "$GITHUB_WORKSPACE/appsrc" -name package.json -not -path "*/node_modules/*" | head -1)
+          APP_DIR=$(dirname "$PKG")
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+      - name: Apply current PWA layers
+        run: |
+          python3 scripts/apply_v54.py "$APP_DIR"
+          python3 scripts/apply_v55.py "$APP_DIR"
+          python3 scripts/apply_v56.py "$APP_DIR"
+      - name: Print song and scale integration context
+        run: |
+          echo "===== NAVIGATION / PAGE ====="
+          grep -n -E 'page === "songs"|Repertório|navigation|mobile-nav' "$APP_DIR/src/App.jsx" | head -80 || true
+          echo "===== SETLIST ====="
+          grep -n -E 'setlist|song_id|setSongId|Songs|Músicas' "$APP_DIR/src/App.jsx" | head -180 || true
+          echo "===== DATA / SAVE ====="
+          grep -n -E 'data\.songs|data\.scales|saveScale|setDoc\(doc\(db, "scales"|function Scale|ScaleEditor' "$APP_DIR/src/App.jsx" | head -160 || true
+          echo "===== IMPORTS ====="
+          sed -n '1,90p' "$APP_DIR/src/App.jsx"
