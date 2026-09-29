@@ -39,5 +39,9 @@ jobs:
           grep -n -E 'setlist|song_id|setSongId|Songs|Músicas' "$APP_DIR/src/App.jsx" | head -180 || true
           echo "===== DATA / SAVE ====="
           grep -n -E 'data\.songs|data\.scales|saveScale|setDoc\(doc\(db, "scales"|function Scale|ScaleEditor' "$APP_DIR/src/App.jsx" | head -160 || true
+          echo "===== SCALE EDITOR ====="
+          sed -n '1310,1645p' "$APP_DIR/src/App.jsx"
+          echo "===== SONGS PAGE ====="
+          sed -n '2960,3055p' "$APP_DIR/src/App.jsx"
           echo "===== IMPORTS ====="
           sed -n '1,90p' "$APP_DIR/src/App.jsx"
