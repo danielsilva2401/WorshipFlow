@@ -227,3 +227,10 @@ subprocess.run(
 )
 
 # v57-build-trigger-2
+
+
+# v57.1: cifra somente manual.
+subprocess.run(
+    [sys.executable, str(Path(__file__).with_name("apply_manual_cifra.py")), str(root)],
+    check=True,
+)
